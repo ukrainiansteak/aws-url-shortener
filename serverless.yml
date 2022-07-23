@@ -1,0 +1,87 @@
+
+service: url-proj
+
+frameworkVersion: '3'
+
+custom:
+  domainName: # your domain name
+  hosted_zonaID: # your ID
+  ssl_arn: # your ssl arn
+
+provider:
+  name: aws
+  runtime: python3.8
+  stage: atokareva
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - 'dynamodb:*'
+          Resource:
+            Fn::GetAtt: [links, Arn]
+
+  environment:
+    TABLE_NAME: ${self:service}-${sls:stage}-links
+    DNS_RECORD: !Join
+      - ""
+      - - "https://"
+        - ${self:custom.domainName}
+        - "/"
+
+functions:
+  create:
+    handler: src.create.handler
+    events:
+      - http:
+          path: link
+          method: post
+  read:
+    handler: src.read.handler
+    events:
+      - http:
+          path: link/{url_id}
+          method: get
+
+resources:
+  Resources:
+    links:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLE_NAME}
+        AttributeDefinitions:
+          - AttributeName: url_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: url_id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+
+    myDomainName:
+      Type: 'AWS::ApiGateway::DomainName'
+      Properties:
+        CertificateArn: ${self:custom.ssl_arn}
+        DomainName: ${self:custom.domainName}
+
+    myMapping:
+      Type: 'AWS::ApiGateway::BasePathMapping'
+      DependsOn:
+        - myDomainName
+      Properties:
+        BasePath: ""
+        Stage: ${opt:stage, self:provider.stage}
+        DomainName: ${self:custom.domainName}
+        RestApiId: !Ref ApiGatewayRestApi
+
+    ApiRoute53Record:
+      Type: AWS::Route53::RecordSetGroup
+      Properties:
+        HostedZoneId: ${self:custom.hosted_zonaID}
+        RecordSets:
+          - Name: ${self:custom.domainName}
+            Type: A
+            AliasTarget:
+              HostedZoneId: !GetAtt myDomainName.DistributionHostedZoneId
+              DNSName: !GetAtt myDomainName.DistributionDomainName
