@@ -11,7 +11,7 @@ custom:
 provider:
   name: aws
   runtime: python3.8
-  stage: atokareva
+  stage: dev
   iam:
     role:
       statements:
